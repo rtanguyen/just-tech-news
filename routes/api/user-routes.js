@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const {User} = require('../../models');
+const { User, Post, Vote, Comment } = require('../../models');
 
 //GET /api/users
 router.get('/', (req, res) => {
@@ -22,7 +22,30 @@ router.get('/:id', (req, res) => {
         //equivalent to SQL query: SELECT * FROM users WHERE id = 1
         where: {
             id: req.params.id
-        }
+        },
+        include: [
+            // NOTE: shows which posts a user has created
+            {
+                model: Post,
+                attributes: ['id', 'title', 'post_url', 'created_at']
+            },
+            //NOTE: shows posts user commented on
+            {
+                model: Comment, 
+                attributes: ['id', 'comment_text', 'created_at'],
+                include: {
+                    model: Post,
+                    attributes: ['title']
+                }
+            },
+            // NOTE: shows which posts a user has voted on
+            {
+                model: Post,
+                attributes: ['title'],
+                through: Vote,
+                as: 'voted_posts'
+            }
+        ]
     })
     .then(dbUserData => {
         if(!dbUserData) {
@@ -55,6 +78,29 @@ router.post('/', (req, res) => {
     });
 });
 
+router.post('/login', (req, res) => {
+    //post method used for login since request parameters are carried in req.body
+    //versus get method which carries parameters in url string
+    //QUERY OPERATION
+     User.findOne({
+         where: {
+             email: req.body.email
+         }
+     }).then(dbUserData => {
+         if(!dbUserData) {
+             res.status(400).json({message: 'No user with that email address'});
+             return;
+         }
+        //hashed password stored on dbUserData object
+         const validPassword = dbUserData.checkPassword(req.body.password);
+            if(!validPassword) {
+                res.status(400).json({message: 'incorrect password'});
+                return;
+            }
+            res.json({user: dbUserData, message: 'you are logged in'});
+     });
+});
+
 // PUT /api/users/1
 router.put('/:id', (req, res) => {
      // if req.body has exact key/value pairs to match the model, you can just use `req.body` 
@@ -63,6 +109,7 @@ router.put('/:id', (req, res) => {
         // SET username = "Lernantino", email = "lernantino@gmail.com", password = "newpw123"
         // WHERE id = 1;
   User.update(req.body, {
+      individualHooks: true,
     where: {
       id: req.params.id
     }
